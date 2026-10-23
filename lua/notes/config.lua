@@ -29,6 +29,8 @@ M.defaults = {
     today = "<leader>nd",
     find = "<leader>nf",
     grep = "<leader>ng",
+    -- Not <leader>nt, so user maps like <leader>ntc (new from template) don't wait on it.
+    tags = "<leader>n#",
   },
 }
 

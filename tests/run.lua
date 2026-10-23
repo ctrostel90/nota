@@ -449,5 +449,120 @@ end)
 
 vim.fn.delete(tmp3, "rf")
 
+-- tags ------------------------------------------------------------------
+
+local tags = require("notes.tags")
+
+test("tags: basic, nested, case-insensitive, unique, in order", function()
+  eq(tags.parse("#Meeting notes #plc and #work/PLC-io\nagain #meeting"), { "meeting", "plc", "work/plc-io" })
+end)
+
+test("tags: headings, mid-word, anchors and numbers are not tags", function()
+  local text = table.concat({
+    "# Heading",
+    "## Sub #real",
+    "C# and page#anchor and [link](#section) and foo#bar",
+    "issue #123 but #2026-q4 is a tag",
+  }, "\n")
+  eq(tags.parse(text), { "real", "2026-q4" })
+end)
+
+test("tags: trailing / and - trimmed, non-ASCII kept", function()
+  eq(tags.parse("#work/ #draft- #Übersicht #größe"), { "work", "draft", "Übersicht", "größe" })
+end)
+
+test("tags: fenced and inline code ignored", function()
+  local text = table.concat({
+    "before #a",
+    "````markdown",
+    "-- #notatag",
+    "```",
+    "still code, shorter fence does not close #nope",
+    "````",
+    "~~~",
+    "#tilde-code",
+    "~~~",
+    "use `#inline` and ``x #two `y` `` but #b",
+  }, "\n")
+  eq(tags.parse(text), { "a", "b" })
+end)
+
+test("tags: CRLF input", function()
+  eq(tags.parse("#a\r\n#b\r\n"), { "a", "b" })
+end)
+
+test("tags.with_parents", function()
+  eq(tags.with_parents("work/plc/io"), { "work", "work/plc", "work/plc/io" })
+end)
+
+-- index / NotesTags -----------------------------------------------------
+
+local index = require("notes.index")
+local tmp4 = vim.fs.normalize(vim.fn.tempname())
+vim.fn.mkdir(tmp4 .. "/work", "p")
+vim.fn.mkdir(tmp4 .. "/.templates", "p")
+fs.write_file(tmp4 .. "/a.md", "#work/plc #meeting\n")
+fs.write_file(tmp4 .. "/work/b.md", "#work\n")
+fs.write_file(tmp4 .. "/c.md", "#meeting #Customer\n")
+fs.write_file(tmp4 .. "/.templates/t.md", "#template-only\n")
+config.setup({ dir = tmp4, start_insert = false, picker = "select" })
+index.clear()
+
+local function summary()
+  return vim.tbl_map(function(t)
+    return { t.name, t.count }
+  end, index.tags())
+end
+
+test("index: counts include nested parents, hidden dirs skipped", function()
+  eq(summary(), { { "meeting", 2 }, { "work", 2 }, { "customer", 1 }, { "work/plc", 1 } })
+  eq(index.tags()[2].paths, { tmp4 .. "/a.md", tmp4 .. "/work/b.md" })
+  eq(index.tags_of(tmp4 .. "/c.md"), { "meeting", "customer" })
+end)
+
+test("index: picks up edits, new and deleted files", function()
+  fs.write_file(tmp4 .. "/c.md", "#customer only, longer now\n")
+  fs.write_file(tmp4 .. "/d.md", "#new\n")
+  vim.fn.delete(tmp4 .. "/work/b.md")
+  eq(summary(), { { "customer", 1 }, { "meeting", 1 }, { "new", 1 }, { "work", 1 }, { "work/plc", 1 } })
+end)
+
+test("NotesTags: pick tag, then note", function()
+  local original = vim.ui.select
+  local prompts, shown = {}, {}
+  vim.ui.select = function(items, opts, on_choice)
+    prompts[#prompts + 1] = opts.prompt
+    shown[#shown + 1] = vim.tbl_map(opts.format_item, items)
+    on_choice(items[#prompts == 1 and 4 or 1])
+  end
+  require("notes").tags()
+  vim.wait(500, function()
+    return #prompts == 2
+  end)
+  vim.ui.select = original
+  eq(prompts, { "Tags", "#work" })
+  eq(shown[1][4], "#work (1)")
+  eq(shown[2], { "a" })
+  eq(vim.fs.normalize(vim.api.nvim_buf_get_name(0)), tmp4 .. "/a.md")
+end)
+
+test("NotesTags with argument and unknown tag", function()
+  local original_select, original_notify = vim.ui.select, vim.notify
+  local shown, notified
+  vim.ui.select = function(items, opts)
+    shown = vim.tbl_map(opts.format_item, items)
+  end
+  vim.notify = function(msg)
+    notified = msg
+  end
+  require("notes").tags("#Customer")
+  require("notes").tags("missing")
+  vim.ui.select, vim.notify = original_select, original_notify
+  eq(shown, { "c" })
+  assert(notified:find("#missing"), notified)
+end)
+
+vim.fn.delete(tmp4, "rf")
+
 io.stdout:write(("\n%d passed, %d failed\n"):format(passed, failed))
 os.exit(failed > 0 and 1 or 0)

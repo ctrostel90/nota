@@ -37,6 +37,24 @@ vim.api.nvim_create_user_command("NotesFind", function()
   require("notes").find()
 end, { desc = "Find a note by name" })
 
+vim.api.nvim_create_user_command("NotesTags", function(cmd)
+  require("notes").tags(cmd.args ~= "" and cmd.args or nil)
+end, {
+  nargs = "?",
+  desc = "Pick a tag, then a note with it ([tag] skips the tag picker)",
+  complete = function(arglead)
+    arglead = arglead:gsub("^#", ""):lower()
+    local names = {}
+    for _, tag in ipairs(require("notes.index").tags()) do
+      if vim.startswith(tag.name, arglead) then
+        names[#names + 1] = tag.name
+      end
+    end
+    table.sort(names)
+    return names
+  end,
+})
+
 vim.api.nvim_create_user_command("NotesGrep", function()
   require("notes").grep()
 end, { desc = "Search the contents of all notes" })

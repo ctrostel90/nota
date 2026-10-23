@@ -6,10 +6,14 @@ Neovim 0.11+, pure Lua, Windows + Linux. Only external dependency: ripgrep (for 
 
 - **Picker**: adapter layer; auto-detect telescope → fzf-lua → snacks → `vim.ui.select`.
 - **Files**: subfolders allowed (`work/meeting-notes` creates `work/`). Empty name → timestamp (`20261023-143012.md`).
-- **Tags**: inline `#tags` anywhere, pattern `#[%w_/-]+` (nested `#work/plc` ok). Ignored: headings, fenced/inline code, mid-word/URL `#`.
+- **Tags**: inline `#tags` at line start or after whitespace; letters (incl. non-ASCII), digits, `_ - /`;
+  at least one non-digit (`#123` is not a tag). Case-insensitive (stored lowercase). Nested `#work/plc`
+  also counts as `work`. Ignored: headings, fenced/inline code, mid-word `#` (`C#`, `page#anchor`, `(#section)`).
+  `:NotesTags` default key is `<leader>n#` (not `<leader>nt`, which would delay `<leader>nt*` template maps).
 - **Links**: `[[name]]` resolves by filename anywhere in the tree; `[[work/name]]` disambiguates. Multiple matches → picker; none → offer to create.
 - **Completion**: shared core feeding blink.cmp, nvim-cmp, and omnifunc. `#` → tags, `[[` → note names.
-- **Index**: built lazily via `vim.fs.dir`, updated per-file on `BufWritePost`.
+- **Index**: built lazily via `vim.fs.dir`; on each use, re-parses only files whose mtime/size changed
+  (so external edits are seen too).
 - **New notes**: opened as unsaved buffers; nothing is written (and no folder created) until the user saves.
 - **Named templates**: see below. Chosen via `:NotesNewFrom`; custom keymaps via the Lua API.
 
@@ -113,7 +117,7 @@ tests/
 3. [x] Named templates: template specs (`dir`, `name` pattern, `fields`), `template_dir`,
        `{{date:fmt}}`, `:NotesNewFrom`, `new({ template = ... })`, `daily` folded into templates
 4. [x] Telescope / fzf-lua / snacks backends, `NotesGrep`
-5. [ ] Tag parser + index, `NotesTags`
+5. [x] Tag parser + index, `NotesTags`
 6. [ ] Wiki links: follow, create-on-missing, backlinks
 7. [ ] Completion: core → omnifunc → blink → cmp
 8. [ ] Docs, tests, CI matrix (ubuntu + windows)
