@@ -167,7 +167,78 @@ test("complete: lists folders", function()
   eq(note.complete("w"), { "work/" })
 end)
 
+-- today -----------------------------------------------------------------
+
+test("today: unsaved daily note from daily template, reused on second call", function()
+  local path, created = note.today()
+  local date = os.date("%Y-%m-%d")
+  eq(path, tmp .. "/daily/" .. date .. ".md")
+  eq(created, true)
+  eq(vim.api.nvim_buf_get_lines(0, 0, -1, false), { "# " .. date, "", "" })
+  eq(fs.exists(path), false)
+  local again, created_again = note.today()
+  eq(again, path)
+  eq(created_again, false)
+end)
+
 vim.fn.delete(tmp, "rf")
 
-io.stdout:write(("%d passed, %d failed\n"):format(passed, failed))
+-- list / find -----------------------------------------------------------
+
+local tmp2 = vim.fs.normalize(vim.fn.tempname())
+config.setup({ dir = tmp2, start_insert = false })
+vim.fn.mkdir(tmp2 .. "/work", "p")
+vim.fn.mkdir(tmp2 .. "/.git", "p")
+for rel, mtime in pairs({ ["old.md"] = 1000, ["work/new.md"] = 3000, ["mid.md"] = 2000, [".git/x.md"] = 4000 }) do
+  fs.write_file(tmp2 .. "/" .. rel, "x\n")
+  vim.uv.fs_utime(tmp2 .. "/" .. rel, mtime, mtime)
+end
+fs.write_file(tmp2 .. "/readme.txt", "x\n")
+
+test("list: markdown only, hidden dirs skipped, newest first", function()
+  local names = vim.tbl_map(function(n)
+    return n.name
+  end, note.list())
+  eq(names, { "work/new", "mid", "old" })
+  eq(note.list()[1].path, tmp2 .. "/work/new.md")
+end)
+
+test("find: picked note is opened", function()
+  local original = vim.ui.select
+  local shown
+  vim.ui.select = function(items, opts, on_choice)
+    shown = vim.tbl_map(opts.format_item, items)
+    on_choice(items[2])
+  end
+  require("notes").find()
+  vim.ui.select = original
+  eq(shown, { "work/new", "mid", "old" })
+  eq(vim.fs.normalize(vim.api.nvim_buf_get_name(0)), tmp2 .. "/mid.md")
+end)
+
+test("pickers: unavailable backend falls back to select with one warning", function()
+  local original, warnings = vim.notify, 0
+  vim.notify = function(_, level)
+    if level == vim.log.levels.WARN then
+      warnings = warnings + 1
+    end
+  end
+  config.setup({ dir = tmp2, picker = "telescope" })
+  local pickers = require("notes.pickers")
+  local a, b = pickers.backend(), pickers.backend()
+  vim.notify = original
+  eq(a, require("notes.pickers.select"))
+  eq(b, a)
+  eq(warnings, 1)
+end)
+
+test("config: rejects unknown picker", function()
+  local ok, err = pcall(config.setup, { picker = "bogus" })
+  eq(ok, false)
+  assert(tostring(err):find("picker"), err)
+end)
+
+vim.fn.delete(tmp2, "rf")
+
+io.stdout:write(("\n%d passed, %d failed\n"):format(passed, failed))
 os.exit(failed > 0 and 1 or 0)

@@ -39,7 +39,7 @@ tests/
 ## Milestones
 
 1. [x] `fs`, `config`, `NotesNew` (subfolders, auto timestamp, templates)
-2. [ ] Picker adapter + `vim.ui.select` backend, `NotesFind`, `NotesToday`
+2. [x] Picker adapter + `vim.ui.select` backend, `NotesFind`, `NotesToday`
 3. [ ] Telescope / fzf-lua / snacks backends, `NotesGrep`
 4. [ ] Tag parser + index, `NotesTags`
 5. [ ] Wiki links: follow, create-on-missing, backlinks
