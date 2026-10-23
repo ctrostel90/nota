@@ -3,19 +3,22 @@ local M = {}
 M.defaults = {
   -- Root directory for notes. `~` and environment variables are expanded.
   dir = "~/notes",
-  -- Templates: a string, a path to a template file, or a function(ctx) returning a string or list of lines.
-  -- Placeholders: {{title}}, {{date}}, {{time}}, {{cursor}}.
+  -- Templates by name. Each is content (a string, a path to a template file, or a
+  -- function(ctx) returning a string or list of lines) or a spec table:
+  --   { template = <content>, dir = "folder", name = "{{date:%Y-%m-%d}}-{{slug}}",
+  --     fields = { { name = "customer", prompt = "Customer: " } } }
+  -- Placeholders: {{title}}, {{slug}}, {{date}}, {{time}}, {{date:<strftime>}}, fields, {{cursor}}.
+  -- Your entries are merged per template with these built-ins, not replaced wholesale.
   templates = {
     default = "# {{title}}\n\n{{cursor}}",
-    daily = "# {{date}}\n\n{{cursor}}",
+    daily = { template = "# {{date}}\n\n{{cursor}}", dir = "daily", name = "{{date:%Y-%m-%d}}" },
   },
+  -- Optional folder of template files; each `<name>.md` becomes template `<name>`.
+  template_dir = nil,
   date_format = "%Y-%m-%d",
   time_format = "%H:%M",
-  -- Filename used when a new note is created without a name.
+  -- Filename used when a new note's name pattern comes out empty.
   timestamp_format = "%Y%m%d-%H%M%S",
-  -- Daily notes live in `<dir>/<daily_dir>/<os.date(daily_format)>.md`.
-  daily_dir = "daily",
-  daily_format = "%Y-%m-%d",
   -- "auto" picks the first installed of telescope, fzf-lua, snacks; falls back to vim.ui.select.
   picker = "auto",
   -- Enter insert mode at {{cursor}} after creating a note.
@@ -34,16 +37,21 @@ M.options = vim.deepcopy(M.defaults)
 
 function M.setup(opts)
   vim.validate("opts", opts, "table", true)
-  local options = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), opts or {})
+  opts = opts or {}
+  local options = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), opts)
+  -- Only the user's own entries; notes.templates layers them over the built-ins so that
+  -- e.g. `daily = "..."` changes the content but keeps the built-in folder and name.
+  options.templates = vim.deepcopy(opts.templates or {})
 
   vim.validate("dir", options.dir, "string")
-  vim.validate("templates.default", options.templates.default, { "string", "function", "table" })
-  vim.validate("templates.daily", options.templates.daily, { "string", "function", "table" })
+  vim.validate("templates", options.templates, "table")
+  for name, entry in pairs(options.templates) do
+    require("notes.templates").validate(name, entry)
+  end
+  vim.validate("template_dir", options.template_dir, "string", true)
   vim.validate("date_format", options.date_format, "string")
   vim.validate("time_format", options.time_format, "string")
   vim.validate("timestamp_format", options.timestamp_format, "string")
-  vim.validate("daily_dir", options.daily_dir, "string")
-  vim.validate("daily_format", options.daily_format, "string")
   vim.validate("picker", options.picker, function(v)
     return vim.list_contains(M.pickers, v)
   end, "one of " .. table.concat(M.pickers, ", "))

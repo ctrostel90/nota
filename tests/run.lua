@@ -51,20 +51,27 @@ end)
 -- parse_name ------------------------------------------------------------
 
 test("parse_name: folder and title", function()
-  eq(note.parse_name("work/Meeting Notes"), { dirs = { "work" }, stem = "meeting-notes", title = "Meeting Notes" })
+  eq(
+    note.parse_name("work/Meeting Notes"),
+    { dirs = { "work" }, has_folder = true, stem = "meeting-notes", title = "Meeting Notes" }
+  )
 end)
 
 test("parse_name: backslashes and .md suffix", function()
-  eq(note.parse_name("Work\\Sub\\x.md"), { dirs = { "work", "sub" }, stem = "x", title = "x" })
+  eq(note.parse_name("Work\\Sub\\x.md"), { dirs = { "work", "sub" }, has_folder = true, stem = "x", title = "x" })
 end)
 
 test("parse_name: trailing separator means timestamp in folder", function()
-  eq(note.parse_name("work/"), { dirs = { "work" } })
+  eq(note.parse_name("work/"), { dirs = { "work" }, has_folder = true })
 end)
 
 test("parse_name: empty input", function()
-  eq(note.parse_name(""), { dirs = {} })
-  eq(note.parse_name(nil), { dirs = {} })
+  eq(note.parse_name(""), { dirs = {}, has_folder = false })
+  eq(note.parse_name(nil), { dirs = {}, has_folder = false })
+end)
+
+test("parse_name: leading separator means the notes root", function()
+  eq(note.parse_name("/x"), { dirs = {}, has_folder = true, stem = "x", title = "x" })
 end)
 
 test("parse_name: cannot escape the notes dir", function()
@@ -87,6 +94,27 @@ end)
 
 test("render: function and list templates", function()
   eq(note.render(function(ctx) return { "# " .. ctx.title } end, { title = "F" }), { "# F" })
+end)
+
+test("render: {{date:fmt}} and field placeholders", function()
+  local lines = note.render("{{date:%Y}} {{customer_name}} {{date}}", { customer_name = "Acme", date = "D" })
+  eq(lines, { os.date("%Y") .. " Acme D" })
+end)
+
+-- render_name -----------------------------------------------------------
+
+test("render_name: values slugified, dangling separators dropped", function()
+  local day = os.date("%Y-%m-%d")
+  eq(note.render_name("{{date:%Y-%m-%d}}-{{customer}}-{{slug}}", { customer = "Acme GmbH", slug = "kickoff" }),
+    day .. "-acme-gmbh-kickoff")
+  eq(note.render_name("{{date:%Y-%m-%d}}-{{customer}}-{{slug}}", { customer = "", slug = "" }), day)
+  eq(note.render_name("{{slug}}", { slug = "" }), "")
+  eq(note.render_name("{{unknown}}-{{slug}}", { slug = "x" }), "x")
+end)
+
+test("render_name: subfolders in pattern, no escaping via ..", function()
+  eq(note.render_name("{{date:%Y}}/{{slug}}", { slug = "x" }), os.date("%Y") .. "/x")
+  eq(note.render_name("../{{slug}}", { slug = "x" }), "x")
 end)
 
 test("render: template file with CRLF", function()
@@ -239,6 +267,166 @@ test("config: rejects unknown picker", function()
 end)
 
 vim.fn.delete(tmp2, "rf")
+
+-- named templates -------------------------------------------------------
+
+local templates = require("notes.templates")
+local tmp3 = vim.fs.normalize(vim.fn.tempname())
+local tpl_dir = tmp3 .. "/.templates"
+vim.fn.mkdir(tpl_dir, "p")
+fs.write_file(tpl_dir .. "/customer.md", "# {{title}}\nCustomer: {{customer}}\n\n#meeting #customer\n{{cursor}}")
+fs.write_file(tpl_dir .. "/standup.md", "# Standup {{date}}\n{{cursor}}")
+config.setup({
+  dir = tmp3,
+  template_dir = tpl_dir,
+  start_insert = false,
+  templates = {
+    daily = "# Day {{date}}\n{{cursor}}",
+    internal = { template = "# {{title}} (internal)\n{{cursor}}", dir = "meetings/internal", name = "{{date:%Y-%m-%d}}-{{slug}}" },
+    customer = {
+      dir = "meetings/customers",
+      name = "{{date:%Y-%m-%d}}-{{customer}}-{{slug}}",
+      fields = { { name = "customer", prompt = "Customer: " } },
+    },
+    folder_only = { dir = "inbox" },
+  },
+})
+local day = os.date("%Y-%m-%d")
+
+local function buf_lines()
+  return vim.api.nvim_buf_get_lines(0, 0, -1, false)
+end
+
+test("templates: names from built-ins, config and template_dir", function()
+  eq(templates.names(), { "customer", "daily", "default", "folder_only", "internal", "standup" })
+end)
+
+test("templates: unknown name", function()
+  local spec, err = templates.get("nope")
+  eq(spec, nil)
+  assert(err:find("nope"), err)
+end)
+
+test("templates: daily content override keeps built-in dir and name", function()
+  local spec = templates.get("daily")
+  eq({ spec.template, spec.dir, spec.pattern }, { "# Day {{date}}\n{{cursor}}", "daily", "{{date:%Y-%m-%d}}" })
+end)
+
+test("templates: content from template_dir, spec from config", function()
+  local spec = templates.get("customer")
+  eq(spec.path, tpl_dir .. "/customer.md")
+  eq(spec.template, tpl_dir .. "/customer.md")
+  eq(spec.fields, { { name = "customer", prompt = "Customer: " } })
+end)
+
+test("templates: no content anywhere falls back to default content", function()
+  eq(templates.get("folder_only").template, "# {{title}}\n\n{{cursor}}")
+end)
+
+test("create: customer template with field", function()
+  local path, created = note.create("Kickoff", { template = "customer", fields = { customer = "Acme GmbH" } })
+  eq(created, true)
+  eq(path, tmp3 .. "/meetings/customers/" .. day .. "-acme-gmbh-kickoff.md")
+  eq(buf_lines(), { "# Kickoff", "Customer: Acme GmbH", "", "#meeting #customer", "" })
+end)
+
+test("create: typed folder overrides template dir, / means root", function()
+  eq(note.create("other/Sync", { template = "internal" }), tmp3 .. "/other/" .. day .. "-sync.md")
+  eq(note.create("/Sync", { template = "internal" }), tmp3 .. "/" .. day .. "-sync.md")
+  eq(buf_lines(), { "# Sync (internal)", "" })
+end)
+
+test("create: empty name with dated pattern uses the date", function()
+  eq(note.create("", { template = "internal" }), tmp3 .. "/meetings/internal/" .. day .. ".md")
+end)
+
+test("create: template-only content via template_dir", function()
+  note.create("x", { template = "standup" })
+  eq(buf_lines(), { "# Standup " .. day, "" })
+end)
+
+test("create: unknown template creates nothing", function()
+  local original, errors = vim.notify, 0
+  vim.notify = function(_, level)
+    errors = errors + (level == vim.log.levels.ERROR and 1 or 0)
+  end
+  local path = note.create("x", { template = "nope" })
+  vim.notify = original
+  eq(path, nil)
+  eq(errors, 1)
+end)
+
+test("today: uses daily template override", function()
+  local path = note.today()
+  eq(path, tmp3 .. "/daily/" .. day .. ".md")
+  eq(buf_lines(), { "# Day " .. day, "" })
+end)
+
+local function stub_input(answers)
+  local original, asked = vim.ui.input, {}
+  vim.ui.input = function(opts, on_confirm)
+    asked[#asked + 1] = opts.prompt
+    on_confirm(table.remove(answers, 1))
+  end
+  return asked, function()
+    vim.ui.input = original
+  end
+end
+
+test("new: prompts for name, then fields, in order", function()
+  local asked, restore = stub_input({ "Review", "Beckhoff" })
+  require("notes").new({ template = "customer" })
+  local expected = tmp3 .. "/meetings/customers/" .. day .. "-beckhoff-review.md"
+  vim.wait(500, function()
+    return vim.fs.normalize(vim.api.nvim_buf_get_name(0)) == expected
+  end)
+  restore()
+  eq(asked, { "New customer note (folder/name, empty = auto): ", "Customer: " })
+  eq(vim.fs.normalize(vim.api.nvim_buf_get_name(0)), expected)
+end)
+
+test("new: given fields are not prompted; cancel aborts", function()
+  local asked, restore = stub_input({})
+  local before = vim.api.nvim_get_current_buf()
+  require("notes").new({ template = "customer", fields = { customer = "Acme" } })
+  vim.wait(100)
+  restore()
+  eq(asked, { "New customer note (folder/name, empty = auto): " })
+  eq(vim.api.nvim_get_current_buf(), before)
+end)
+
+test("new_from: picks template, then prompts", function()
+  local original_select = vim.ui.select
+  local shown
+  vim.ui.select = function(items, opts, on_choice)
+    shown = vim.tbl_map(opts.format_item, items)
+    on_choice(items[vim.fn.index(shown, "internal") + 1])
+  end
+  local _, restore = stub_input({ "Planning" })
+  require("notes").new_from()
+  local expected = tmp3 .. "/meetings/internal/" .. day .. "-planning.md"
+  vim.wait(500, function()
+    return vim.fs.normalize(vim.api.nvim_buf_get_name(0)) == expected
+  end)
+  restore()
+  vim.ui.select = original_select
+  eq(shown, templates.names())
+  eq(vim.fs.normalize(vim.api.nvim_buf_get_name(0)), expected)
+end)
+
+test("complete_from: template names, then folders", function()
+  eq(note.complete_from("cu", "NotesNewFrom cu"), { "customer" })
+  eq(note.complete_from("", "NotesNewFrom "), templates.names())
+  eq(note.complete_from("m", "NotesNewFrom customer m"), {})
+end)
+
+test("config: rejects bad field names", function()
+  local ok, err = pcall(config.setup, { templates = { x = { fields = { "has space" } } } })
+  eq(ok, false)
+  assert(tostring(err):find("fields"), err)
+end)
+
+vim.fn.delete(tmp3, "rf")
 
 io.stdout:write(("\n%d passed, %d failed\n"):format(passed, failed))
 os.exit(failed > 0 and 1 or 0)

@@ -17,9 +17,29 @@ function M.setup(opts)
   map(keymaps.find, M.find, "find note")
 end
 
---- Create a new note. Prompts for a name when `name` is nil; an empty name uses a timestamp.
-function M.new(name)
-  return require("notes.note").new(name)
+--- Create a new note. `opts` is a name string or `{ template?, name?, fields? }`;
+--- a missing name and missing template fields are prompted for. An empty name uses
+--- the template's name pattern, falling back to a timestamp.
+---   require("notes").new({ template = "customer" })
+function M.new(opts)
+  return require("notes.note").new(opts)
+end
+
+--- Create a note from `template`, or pick a template first when it is nil.
+function M.new_from(template, name)
+  if template then
+    return M.new({ template = template, name = name })
+  end
+  local templates = require("notes.templates")
+  local items = vim.tbl_map(function(t)
+    return { name = t, path = templates.get(t).path }
+  end, templates.names())
+  require("notes.pickers").pick(items, { prompt = "Template" }, function(item)
+    -- Let the picker close before the name prompt opens.
+    vim.schedule(function()
+      M.new({ template = item.name, name = name })
+    end)
+  end)
 end
 
 --- Open or create today's daily note.
