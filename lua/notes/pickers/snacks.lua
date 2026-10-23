@@ -7,7 +7,7 @@ end
 
 function M.pick(items, opts, on_choice)
   local entries = vim.tbl_map(function(item)
-    return { text = item.name, file = item.path, item = item }
+    return { text = require("notes.pickers").text(item), file = item.path, item = item }
   end, items)
   require("snacks").picker.pick({
     title = opts.prompt,

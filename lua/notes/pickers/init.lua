@@ -4,7 +4,8 @@ local M = {}
 
 -- Backends in auto-detect order. Each is a module `notes.pickers.<name>` exposing:
 --   available() -> boolean
---   pick(items, opts, on_choice)  -- items: { name, path? }[], opts: { prompt }, on_choice(item)
+--   pick(items, opts, on_choice)  -- items: { name, display?, path? }[], opts: { prompt }, on_choice(item)
+--                                 -- shows and matches against M.text(item)
 --   grep(opts)                    -- opts: { cwd, prompt }; searches *.md below cwd
 M.order = { "telescope", "fzf_lua", "snacks", "select" }
 
@@ -36,6 +37,11 @@ function M.backend()
       return backend
     end
   end
+end
+
+--- Text shown and fuzzy-matched for an item (e.g. a note name followed by its tags).
+function M.text(item)
+  return item.display or item.name
 end
 
 --- Previews are only shown when every item is a file.

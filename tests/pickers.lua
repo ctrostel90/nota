@@ -264,6 +264,28 @@ test("pick: items without paths work (no preview)", function()
   eq(chosen, { name = "internal" })
 end)
 
+test("pick: display text is matched, words in any order", function()
+  if backend_name == "fzf_lua" then
+    return -- matching happens inside fzf, which these tests cannot drive
+  end
+  local chosen
+  local tagged = {
+    { name = "work/new", display = "work/new  #meeting #plc", path = tmp .. "/work/new.md" },
+    { name = "mid", display = "mid       #meeting", path = tmp .. "/mid.md" },
+    { name = "old", path = tmp .. "/old.md" },
+  }
+  local _, confirm = driver.pick("#plc #meeting", function()
+    pickers.pick(tagged, { prompt = "Find note" }, function(item)
+      chosen = item
+    end)
+  end)
+  confirm()
+  wait_for("choice", function()
+    return chosen ~= nil
+  end)
+  eq(chosen, tagged[1])
+end)
+
 test("NotesFind opens the chosen note", function()
   local _, confirm = driver.pick("old", function()
     require("notes").find()

@@ -21,6 +21,9 @@ M.defaults = {
   timestamp_format = "%Y%m%d-%H%M%S",
   -- "auto" picks the first installed of telescope, fzf-lua, snacks; falls back to vim.ui.select.
   picker = "auto",
+  -- Show each note's tags in :NotesFind / :NotesTags lists, so typing `#meeting #plc` in
+  -- the fuzzy finder narrows to notes with both.
+  find_tags = true,
   -- Enter insert mode at {{cursor}} after creating a note.
   start_insert = true,
   -- Set a key to false to disable that mapping.
@@ -29,6 +32,8 @@ M.defaults = {
     today = "<leader>nd",
     find = "<leader>nf",
     grep = "<leader>ng",
+    -- Not <leader>nt, so user maps like <leader>ntc (new from template) don't wait on it.
+    tags = "<leader>n#",
   },
 }
 
@@ -56,6 +61,7 @@ function M.setup(opts)
   vim.validate("picker", options.picker, function(v)
     return vim.list_contains(M.pickers, v)
   end, "one of " .. table.concat(M.pickers, ", "))
+  vim.validate("find_tags", options.find_tags, "boolean")
   vim.validate("start_insert", options.start_insert, "boolean")
   for name, lhs in pairs(options.keymaps) do
     vim.validate("keymaps." .. name, lhs, { "string", "boolean" })

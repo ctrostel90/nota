@@ -6,18 +6,19 @@ end
 
 function M.pick(items, opts, on_choice)
   local utils = require("fzf-lua.utils")
-  local by_name, names = {}, {}
+  local text = require("notes.pickers").text
+  local by_text, names = {}, {}
   for _, item in ipairs(items) do
-    by_name[item.name] = item
-    names[#names + 1] = item.name
+    by_text[text(item)] = item
+    names[#names + 1] = text(item)
   end
   local function lookup(entry)
-    return entry and by_name[utils.strip_ansi_coloring(entry)]
+    return entry and by_text[utils.strip_ansi_coloring(entry)]
   end
 
   local previewer
   if require("notes.pickers").all_have_paths(items) then
-    -- Entries are display names, not paths, so map them back for the builtin previewer.
+    -- Entries are display text, not paths, so map them back for the builtin previewer.
     previewer = {
       _ctor = function()
         local cls = require("fzf-lua.previewer.builtin").buffer_or_file:extend()

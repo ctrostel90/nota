@@ -97,4 +97,10 @@ function M.mtime(path)
   return stat and stat.mtime.sec or 0
 end
 
+--- Cheap change detector: mtime (with nanoseconds) and size, or nil if missing.
+function M.signature(path)
+  local stat = vim.uv.fs_stat(path)
+  return stat and ("%d.%d:%d"):format(stat.mtime.sec, stat.mtime.nsec, stat.size) or nil
+end
+
 return M
