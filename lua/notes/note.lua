@@ -82,18 +82,56 @@ function M.render(template, ctx)
   return lines, cursor
 end
 
+local function find_buf(path)
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    local name = vim.api.nvim_buf_get_name(buf)
+    if name ~= "" and fs.same(name, path) then
+      return buf
+    end
+  end
+end
+
+--- A note "exists" if it is on disk or already open as an unsaved buffer.
+local function taken(path)
+  return fs.exists(path) or find_buf(path) ~= nil
+end
+
 local function unique_path(dir, stem)
   local path = fs.join(dir, stem .. ".md")
   local i = 1
-  while fs.exists(path) do
+  while taken(path) do
     path = fs.join(dir, ("%s-%d.md"):format(stem, i))
     i = i + 1
   end
   return path
 end
 
-function M.open(path, cursor)
-  vim.cmd.edit(vim.fn.fnameescape(path))
+--- Fill the current (new, unsaved) buffer with `lines`. Nothing is written to disk;
+--- the note's folder is created when the user saves.
+local function prepare_buffer(lines)
+  local buf = vim.api.nvim_get_current_buf()
+  vim.bo[buf].fileformat = "unix"
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.api.nvim_create_autocmd("BufWritePre", {
+    buffer = buf,
+    desc = "notes: create note folder on save",
+    callback = function(args)
+      fs.mkdir_p(vim.fs.dirname(vim.api.nvim_buf_get_name(args.buf)))
+    end,
+  })
+end
+
+function M.open(path, cursor, lines)
+  local buf = find_buf(path)
+  if buf then
+    -- Switch instead of :edit, which would try to reload a modified buffer (E37).
+    vim.api.nvim_set_current_buf(buf)
+  else
+    vim.cmd.edit(vim.fn.fnameescape(path))
+  end
+  if lines then
+    prepare_buffer(lines)
+  end
   if not cursor then
     return
   end
@@ -108,8 +146,9 @@ function M.open(path, cursor)
   end
 end
 
---- Create a note from user input (see `parse_name`) and open it.
---- If the note already exists it is opened unchanged. Returns `path, created`.
+--- Create a note from user input (see `parse_name`) and open it as an unsaved buffer.
+--- If the note already exists (on disk or as an open buffer) it is opened unchanged.
+--- Returns `path, created`.
 function M.create(input)
   local opts = config.options
   local parsed = M.parse_name(input)
@@ -123,7 +162,7 @@ function M.create(input)
     title = os.date(opts.date_format .. " " .. opts.time_format)
   end
 
-  if fs.exists(path) then
+  if taken(path) then
     M.open(path)
     vim.notify("notes: opened existing note " .. path, vim.log.levels.INFO)
     return path, false
@@ -134,13 +173,7 @@ function M.create(input)
     date = os.date(opts.date_format),
     time = os.date(opts.time_format),
   })
-  fs.mkdir_p(dir)
-  local ok, err = fs.write_file(path, table.concat(lines, "\n") .. "\n")
-  if not ok then
-    vim.notify("notes: could not create " .. path .. ": " .. tostring(err), vim.log.levels.ERROR)
-    return nil, false
-  end
-  M.open(path, cursor)
+  M.open(path, cursor, lines)
   return path, true
 end
 

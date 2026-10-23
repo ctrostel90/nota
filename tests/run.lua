@@ -105,6 +105,7 @@ test("fs.is_inside", function()
   eq(fs.is_inside("/a/notes-old/x.md", "/a/notes"), false)
   if fs.is_windows then
     eq(fs.is_inside("c:\\A\\Notes\\x.md", "C:/a/notes"), true)
+    eq(fs.same("c:\\A\\x.md", "C:/a/X.md"), true)
   end
 end)
 
@@ -117,22 +118,41 @@ end)
 local tmp = vim.fs.normalize(vim.fn.tempname())
 config.setup({ dir = tmp, start_insert = false })
 
-test("create: named note in new subfolder", function()
+test("create: opens an unsaved buffer, nothing on disk", function()
   local path, created = note.create("work/Hello World")
   eq(created, true)
   eq(path, tmp .. "/work/hello-world.md")
-  eq(fs.read_file(path), "# Hello World\n\n\n")
   eq(vim.fs.normalize(vim.api.nvim_buf_get_name(0)), path)
+  eq(vim.api.nvim_buf_get_lines(0, 0, -1, false), { "# Hello World", "", "" })
   eq(vim.api.nvim_win_get_cursor(0), { 3, 0 })
+  eq(vim.bo.modified, true)
+  eq(fs.exists(path), false)
+  eq(fs.exists(tmp .. "/work"), false)
+end)
+
+test("create: saving creates the folder and writes LF", function()
+  local path = tmp .. "/work/hello-world.md"
+  vim.cmd.write()
+  eq(fs.read_file(path), "# Hello World\n\n\n")
 end)
 
 test("create: existing note is opened, not overwritten", function()
-  local path = tmp .. "/work/hello-world.md"
+  local path = tmp .. "/work/existing.md"
   fs.write_file(path, "keep me\n")
-  local got, created = note.create("work/hello world")
+  local got, created = note.create("work/Existing")
   eq(got, path)
   eq(created, false)
-  eq(fs.read_file(path), "keep me\n")
+  eq(vim.api.nvim_buf_get_lines(0, 0, -1, false), { "keep me" })
+  eq(vim.bo.modified, false)
+end)
+
+test("create: unsaved note with same name is reused", function()
+  local path = note.create("Draft")
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { "edited" })
+  local got, created = note.create("draft")
+  eq(got, path)
+  eq(created, false)
+  eq(vim.api.nvim_buf_get_lines(0, 0, -1, false), { "edited" })
 end)
 
 test("create: empty name uses unique timestamps", function()

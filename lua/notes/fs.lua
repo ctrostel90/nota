@@ -21,12 +21,19 @@ function M.mkdir_p(dir)
   end
 end
 
+--- Normalized form used for comparing paths. Case-insensitive on Windows.
+local function comparable(path)
+  path = M.normalize(path)
+  return M.is_windows and path:lower() or path
+end
+
+function M.same(a, b)
+  return comparable(a) == comparable(b)
+end
+
 --- Whether `path` is `dir` or somewhere below it. Case-insensitive on Windows.
 function M.is_inside(path, dir)
-  path, dir = M.normalize(path), M.normalize(dir)
-  if M.is_windows then
-    path, dir = path:lower(), dir:lower()
-  end
+  path, dir = comparable(path), comparable(dir)
   dir = dir:gsub("/+$", "")
   return path == dir or path:sub(1, #dir + 1) == dir .. "/"
 end
