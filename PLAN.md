@@ -18,6 +18,13 @@ Neovim 0.11+, pure Lua, Windows + Linux. Only external dependency: ripgrep (for 
   - Exact: `:NotesTags meeting plc -draft` lists notes with all given tags and none of the `-` ones;
     every word tab-completes.
 - **Links**: `[[name]]` resolves by filename anywhere in the tree; `[[work/name]]` disambiguates. Multiple matches → picker; none → offer to create.
+  - Syntax: `[[target]]`, `[[target|alias]]`, `[[target#Heading]]` (jumps to the heading), `[[#Heading]]` (same note).
+    `![[image.png]]` and other non-`.md` targets are not note links. Links in code are ignored.
+  - Matching compares slugified segments, so `[[Meeting Notes]]` finds `meeting-notes.md`; an exact path wins
+    over a suffix match; `[[/x]]` only matches `x.md` at the notes root.
+  - `<CR>` / `gf` (`links.keys`) are buffer-local in notes; off a link they keep their normal behaviour.
+  - Missing targets are created with the default template as unsaved buffers (`links.confirm_create`).
+  - `:NotesBacklinks` / `<leader>nb`: notes whose links resolve to the current note (ambiguous links count).
 - **Completion**: shared core feeding blink.cmp, nvim-cmp, and omnifunc. `#` → tags, `[[` → note names.
 - **Index**: built lazily via `vim.fs.dir`; on each use, re-parses only files whose mtime/size changed
   (so external edits are seen too).
@@ -125,6 +132,6 @@ tests/
        `{{date:fmt}}`, `:NotesNewFrom`, `new({ template = ... })`, `daily` folded into templates
 4. [x] Telescope / fzf-lua / snacks backends, `NotesGrep`
 5. [x] Tag parser + index, `NotesTags`
-6. [ ] Wiki links: follow, create-on-missing, backlinks
+6. [x] Wiki links: follow, create-on-missing, backlinks
 7. [ ] Completion: core → omnifunc → blink → cmp
 8. [ ] Docs, tests, CI matrix (ubuntu + windows)
