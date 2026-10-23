@@ -66,6 +66,32 @@ function M.tags()
   return result
 end
 
+--- Notes with every tag in `include` and none in `exclude` (lowercase, without `#`).
+--- Nested tags count for their parents: `include = { "work" }` matches `#work/plc`.
+function M.matching(include, exclude)
+  local paths = {}
+  for path, entry in pairs(M.refresh()) do
+    local has = {}
+    for _, tag in ipairs(entry.tags) do
+      for _, name in ipairs(tags.with_parents(tag)) do
+        has[name] = true
+      end
+    end
+    local ok = true
+    for _, tag in ipairs(include) do
+      ok = ok and has[tag] == true
+    end
+    for _, tag in ipairs(exclude) do
+      ok = ok and not has[tag]
+    end
+    if ok then
+      paths[#paths + 1] = path
+    end
+  end
+  table.sort(paths)
+  return paths
+end
+
 --- Tags of a single note (as written, without parents).
 function M.tags_of(path)
   local entry = M.refresh()[fs.normalize(path)]

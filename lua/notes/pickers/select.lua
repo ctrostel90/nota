@@ -9,9 +9,7 @@ end
 function M.pick(items, opts, on_choice)
   vim.ui.select(items, {
     prompt = opts.prompt,
-    format_item = function(item)
-      return item.name
-    end,
+    format_item = require("notes.pickers").text,
   }, function(item)
     if item then
       on_choice(item)

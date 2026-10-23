@@ -10,6 +10,13 @@ Neovim 0.11+, pure Lua, Windows + Linux. Only external dependency: ripgrep (for 
   at least one non-digit (`#123` is not a tag). Case-insensitive (stored lowercase). Nested `#work/plc`
   also counts as `work`. Ignored: headings, fenced/inline code, mid-word `#` (`C#`, `page#anchor`, `(#section)`).
   `:NotesTags` default key is `<leader>n#` (not `<leader>nt`, which would delay `<leader>nt*` template maps).
+- **Multiple tags**:
+  - Fuzzy: with `find_tags = true` (default), `:NotesFind`/`:NotesTags` entries show the note's tags
+    (`standup  #meeting #plc`), so typing `#meeting #plc` narrows to notes with both. Every
+    space-separated word must match, in any order (telescope gets a word-splitting sorter wrapper;
+    fzf-lua and snacks do this natively).
+  - Exact: `:NotesTags meeting plc -draft` lists notes with all given tags and none of the `-` ones;
+    every word tab-completes.
 - **Links**: `[[name]]` resolves by filename anywhere in the tree; `[[work/name]]` disambiguates. Multiple matches → picker; none → offer to create.
 - **Completion**: shared core feeding blink.cmp, nvim-cmp, and omnifunc. `#` → tags, `[[` → note names.
 - **Index**: built lazily via `vim.fs.dir`; on each use, re-parses only files whose mtime/size changed

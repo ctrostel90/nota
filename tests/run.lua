@@ -542,7 +542,7 @@ test("NotesTags: pick tag, then note", function()
   vim.ui.select = original
   eq(prompts, { "Tags", "#work" })
   eq(shown[1][4], "#work (1)")
-  eq(shown[2], { "a" })
+  eq(shown[2], { "a  #work/plc #meeting" })
   eq(vim.fs.normalize(vim.api.nvim_buf_get_name(0)), tmp4 .. "/a.md")
 end)
 
@@ -558,8 +558,77 @@ test("NotesTags with argument and unknown tag", function()
   require("notes").tags("#Customer")
   require("notes").tags("missing")
   vim.ui.select, vim.notify = original_select, original_notify
-  eq(shown, { "c" })
+  eq(shown, { "c  #customer" })
   assert(notified:find("#missing"), notified)
+end)
+
+-- multiple tags ---------------------------------------------------------
+
+fs.write_file(tmp4 .. "/e.md", "#meeting #plc #draft\n")
+fs.write_file(tmp4 .. "/f.md", "#meeting #plc\n")
+fs.write_file(tmp4 .. "/long-note-name.md", "#meeting\n")
+
+local function capture_select(fn)
+  local original, shown, prompt = vim.ui.select, nil, nil
+  vim.ui.select = function(items, opts)
+    shown = vim.tbl_map(opts.format_item, items)
+    prompt = opts.prompt
+  end
+  fn()
+  vim.ui.select = original
+  return shown, prompt
+end
+
+test("parse_tag_query: words, # optional, - excludes, case-insensitive", function()
+  local include, exclude = require("notes").parse_tag_query("Meeting #plc -draft -#Old")
+  eq({ include, exclude }, { { "meeting", "plc" }, { "draft", "old" } })
+  eq({ require("notes").parse_tag_query({ "a", "-b" }) }, { { "a" }, { "b" } })
+end)
+
+test("index.matching: all included, none excluded, parents count", function()
+  local names = function(paths)
+    return vim.tbl_map(function(p)
+      return vim.fs.basename(p)
+    end, paths)
+  end
+  eq(names(index.matching({ "meeting", "plc" }, {})), { "e.md", "f.md" })
+  eq(names(index.matching({ "meeting", "plc" }, { "draft" })), { "f.md" })
+  eq(names(index.matching({ "work" }, {})), { "a.md" })
+  eq(#index.matching({}, { "meeting" }), #note.list() - 4)
+end)
+
+test("NotesTags with several tags and an exclusion", function()
+  local shown, prompt = capture_select(function()
+    require("notes").tags({ "meeting", "plc", "-draft" })
+  end)
+  eq(prompt, "#meeting #plc -#draft")
+  eq(shown, { "f  #meeting #plc" })
+end)
+
+test("NotesFind shows aligned tags, untagged notes stay bare", function()
+  fs.write_file(tmp4 .. "/untagged.md", "nothing here\n")
+  local shown = capture_select(function()
+    require("notes").find()
+  end)
+  assert(vim.list_contains(shown, "untagged"), vim.inspect(shown))
+  assert(vim.list_contains(shown, "f               #meeting #plc"), vim.inspect(shown))
+  assert(vim.list_contains(shown, "long-note-name  #meeting"), vim.inspect(shown))
+end)
+
+test("find_tags = false shows plain names", function()
+  config.setup({ dir = tmp4, start_insert = false, picker = "select", find_tags = false })
+  local shown = capture_select(function()
+    require("notes").find()
+  end)
+  assert(vim.list_contains(shown, "f"), vim.inspect(shown))
+  config.setup({ dir = tmp4, start_insert = false, picker = "select" })
+end)
+
+test("NotesTags completion: each word, - prefix kept", function()
+  vim.cmd.runtime("plugin/notes.lua")
+  eq(vim.fn.getcompletion("NotesTags meeting pl", "cmdline"), { "plc" })
+  eq(vim.fn.getcompletion("NotesTags -dr", "cmdline"), { "-draft" })
+  eq(vim.fn.getcompletion("NotesTags #cust", "cmdline"), { "customer" })
 end)
 
 vim.fn.delete(tmp4, "rf")
