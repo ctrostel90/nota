@@ -5,10 +5,20 @@ local tags = require("notes.tags")
 
 local M = {}
 
--- path -> { signature, name, tags, links }. Rebuilt per file only when its mtime/size
+-- path -> { signature, name, title, tags, links }. Rebuilt per file only when its mtime/size
 -- changes, so edits made outside Neovim are picked up too.
 local cache = {}
 local cache_root
+
+--- Text of the first level-1 heading (`# Title`), or nil.
+local function title_of(content)
+  for line in content:gmatch("[^\r\n]+") do
+    local title = line:match("^#%s+(.-)%s*$")
+    if title then
+      return title
+    end
+  end
+end
 
 --- Bring the index up to date with the notes dir and return `cache`.
 function M.refresh()
@@ -28,6 +38,7 @@ function M.refresh()
       cache[path] = {
         signature = signature,
         name = rel:sub(1, -4),
+        title = title_of(content),
         tags = tags.parse(content),
         links = links.parse(content),
       }

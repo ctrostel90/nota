@@ -31,6 +31,11 @@ M.defaults = {
     -- Ask before creating the note a [[link]] points to when it does not exist yet.
     confirm_create = true,
   },
+  completion = {
+    -- Set 'omnifunc' in notes so <C-x><C-o> completes #tags and [[links]].
+    -- (blink.cmp / nvim-cmp sources are enabled in their own configs; see README.)
+    omnifunc = true,
+  },
   -- Enter insert mode at {{cursor}} after creating a note.
   start_insert = true,
   -- Set a key to false to disable that mapping.
@@ -72,6 +77,7 @@ function M.setup(opts)
   vim.validate("find_tags", options.find_tags, "boolean")
   vim.validate("links.keys", options.links.keys, "table")
   vim.validate("links.confirm_create", options.links.confirm_create, "boolean")
+  vim.validate("completion.omnifunc", options.completion.omnifunc, "boolean")
   vim.validate("start_insert", options.start_insert, "boolean")
   for name, lhs in pairs(options.keymaps) do
     vim.validate("keymaps." .. name, lhs, { "string", "boolean" })

@@ -1,5 +1,7 @@
 local M = {}
 
+local cmp_registered = false
+
 local function map(lhs, fn, desc)
   if lhs then
     vim.keymap.set("n", lhs, fn, { desc = "Notes: " .. desc })
@@ -21,19 +23,31 @@ function M.setup(opts)
   end, "notes by tag")
   map(keymaps.backlinks, M.backlinks, "backlinks")
 
-  -- Follow-link keys on notes, including ones already open.
-  local links = require("notes.links")
+  -- Follow-link keys and omnifunc on notes, including ones already open.
+  local function attach(buf)
+    require("notes.links").attach(buf)
+    if options.completion.omnifunc then
+      require("notes.completion.omni").attach(buf)
+    end
+  end
   vim.api.nvim_create_autocmd("FileType", {
-    group = vim.api.nvim_create_augroup("notes_links", { clear = true }),
+    group = vim.api.nvim_create_augroup("notes_attach", { clear = true }),
     pattern = "markdown",
     callback = function(args)
-      links.attach(args.buf)
+      attach(args.buf)
     end,
   })
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "markdown" then
-      links.attach(buf)
+      attach(buf)
     end
+  end
+
+  -- Make the "notes" source available to nvim-cmp (users still list it in their sources).
+  local ok, cmp = pcall(require, "cmp")
+  if ok and type(cmp.register_source) == "function" and not cmp_registered then
+    cmp_registered = true
+    cmp.register_source("notes", require("notes.completion.cmp").new())
   end
 end
 
