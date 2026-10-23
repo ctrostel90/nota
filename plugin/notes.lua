@@ -56,6 +56,10 @@ end, {
   end,
 })
 
+vim.api.nvim_create_user_command("NotesBacklinks", function()
+  require("notes").backlinks()
+end, { desc = "Pick from the notes that link to the current note" })
+
 vim.api.nvim_create_user_command("NotesGrep", function()
   require("notes").grep()
 end, { desc = "Search the contents of all notes" })

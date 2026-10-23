@@ -24,6 +24,13 @@ M.defaults = {
   -- Show each note's tags in :NotesFind / :NotesTags lists, so typing `#meeting #plc` in
   -- the fuzzy finder narrows to notes with both.
   find_tags = true,
+  links = {
+    -- Buffer-local keys (in notes only) that follow the [[link]] under the cursor; off a
+    -- link they keep their normal behaviour. Set to {} to disable.
+    keys = { "<CR>", "gf" },
+    -- Ask before creating the note a [[link]] points to when it does not exist yet.
+    confirm_create = true,
+  },
   -- Enter insert mode at {{cursor}} after creating a note.
   start_insert = true,
   -- Set a key to false to disable that mapping.
@@ -34,6 +41,7 @@ M.defaults = {
     grep = "<leader>ng",
     -- Not <leader>nt, so user maps like <leader>ntc (new from template) don't wait on it.
     tags = "<leader>n#",
+    backlinks = "<leader>nb",
   },
 }
 
@@ -62,6 +70,8 @@ function M.setup(opts)
     return vim.list_contains(M.pickers, v)
   end, "one of " .. table.concat(M.pickers, ", "))
   vim.validate("find_tags", options.find_tags, "boolean")
+  vim.validate("links.keys", options.links.keys, "table")
+  vim.validate("links.confirm_create", options.links.confirm_create, "boolean")
   vim.validate("start_insert", options.start_insert, "boolean")
   for name, lhs in pairs(options.keymaps) do
     vim.validate("keymaps." .. name, lhs, { "string", "boolean" })

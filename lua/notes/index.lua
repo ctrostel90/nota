@@ -1,11 +1,12 @@
 local config = require("notes.config")
 local fs = require("notes.fs")
+local links = require("notes.links")
 local tags = require("notes.tags")
 
 local M = {}
 
--- path -> { signature, tags }. Rebuilt per file only when its mtime/size changes, so edits
--- made outside Neovim are picked up too.
+-- path -> { signature, name, tags, links }. Rebuilt per file only when its mtime/size
+-- changes, so edits made outside Neovim are picked up too.
 local cache = {}
 local cache_root
 
@@ -24,7 +25,12 @@ function M.refresh()
     local entry = cache[path]
     if not entry or entry.signature ~= signature then
       local content = fs.read_file(path) or ""
-      cache[path] = { signature = signature, name = rel:sub(1, -4), tags = tags.parse(content) }
+      cache[path] = {
+        signature = signature,
+        name = rel:sub(1, -4),
+        tags = tags.parse(content),
+        links = links.parse(content),
+      }
     end
   end
   for path in pairs(cache) do

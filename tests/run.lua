@@ -633,5 +633,148 @@ end)
 
 vim.fn.delete(tmp4, "rf")
 
+-- links -----------------------------------------------------------------
+
+local links = require("notes.links")
+
+test("links.parse: targets, aliases, headings; skips code, embeds, same-note", function()
+  local text = table.concat({
+    "See [[a]] and [[b|Alias]] and [[ c #Heading ]] and [[a]] again",
+    "![[image.png]] [[doc.pdf]] [[#local]] [[notes.md]] `[[inline]]`",
+    "```",
+    "[[fenced]]",
+    "```",
+  }, "\n")
+  eq(links.parse(text), { "a", "b", "c", "notes.md" })
+end)
+
+test("links.link_at: only when the cursor is inside the brackets", function()
+  local line = "x [[one|alias]] y [[two#H]]"
+  eq(links.link_at(line, 0), nil)
+  eq(links.link_at(line, 2), { target = "one" })
+  eq(links.link_at(line, 14), { target = "one" })
+  eq(links.link_at(line, 15), nil)
+  eq(links.link_at(line, 20), { target = "two", heading = "H" })
+end)
+
+test("links.resolver: exact, slugified, suffix, ambiguous, rooted", function()
+  local notes = {
+    { name = "work/meeting" },
+    { name = "personal/meeting" },
+    { name = "meeting-notes" },
+    { name = "2026/standup" },
+  }
+  local resolve = links.resolver(notes)
+  local function names(target)
+    return vim.tbl_map(function(n)
+      return n.name
+    end, resolve(target))
+  end
+  eq(names("Meeting Notes"), { "meeting-notes" })
+  eq(names("meeting"), { "work/meeting", "personal/meeting" })
+  eq(names("Work\\Meeting.md"), { "work/meeting" })
+  eq(names("standup"), { "2026/standup" })
+  eq(names("/meeting"), {})
+  eq(names("/work/meeting"), { "work/meeting" })
+  eq(names("nope"), {})
+end)
+
+local tmp5 = vim.fs.normalize(vim.fn.tempname())
+vim.fn.mkdir(tmp5 .. "/work", "p")
+vim.fn.mkdir(tmp5 .. "/personal", "p")
+fs.write_file(tmp5 .. "/index.md", "See [[work/meeting#Agenda]] and [[meeting]] and [[New Idea]].\nplain text\n")
+fs.write_file(tmp5 .. "/work/meeting.md", "# Meeting\n\n## Agenda\nitems\n")
+fs.write_file(tmp5 .. "/personal/meeting.md", "# Personal\nback to [[index]]\n")
+fs.write_file(tmp5 .. "/other.md", "`[[index]]` is code, but [[Index|home]] is not\n")
+config.setup({ dir = tmp5, start_insert = false, picker = "select" })
+
+local function on_link(text)
+  vim.cmd.edit(vim.fn.fnameescape(tmp5 .. "/index.md"))
+  local line = vim.api.nvim_buf_get_lines(0, 0, 1, false)[1]
+  vim.api.nvim_win_set_cursor(0, { 1, line:find(text, 1, true) + 1 })
+end
+
+test("follow: single match opens the note at the heading", function()
+  on_link("[[work/meeting#Agenda]]")
+  eq(require("notes").follow_link(), true)
+  eq(vim.fs.normalize(vim.api.nvim_buf_get_name(0)), tmp5 .. "/work/meeting.md")
+  eq(vim.api.nvim_win_get_cursor(0)[1], 3)
+end)
+
+test("follow: several matches open a picker", function()
+  on_link("[[meeting]]")
+  local original, shown = vim.ui.select, nil
+  vim.ui.select = function(items, opts, on_choice)
+    shown = vim.tbl_map(opts.format_item, items)
+    on_choice(items[vim.fn.index(shown, "personal/meeting") + 1])
+  end
+  links.follow()
+  vim.ui.select = original
+  table.sort(shown)
+  eq(shown, { "personal/meeting", "work/meeting" })
+  eq(vim.fs.normalize(vim.api.nvim_buf_get_name(0)), tmp5 .. "/personal/meeting.md")
+end)
+
+test("follow: missing note is created (unsaved) after confirming", function()
+  local original = vim.fn.confirm
+  vim.fn.confirm = function()
+    return 2
+  end
+  on_link("[[New Idea]]")
+  links.follow()
+  eq(vim.fs.normalize(vim.api.nvim_buf_get_name(0)), tmp5 .. "/index.md")
+
+  vim.fn.confirm = function()
+    return 1
+  end
+  links.follow()
+  vim.fn.confirm = original
+  eq(vim.fs.normalize(vim.api.nvim_buf_get_name(0)), tmp5 .. "/new-idea.md")
+  eq(vim.api.nvim_buf_get_lines(0, 0, 1, false), { "# New Idea" })
+  eq(fs.exists(tmp5 .. "/new-idea.md"), false)
+end)
+
+test("follow: off a link returns false", function()
+  vim.cmd.edit(vim.fn.fnameescape(tmp5 .. "/index.md"))
+  vim.api.nvim_win_set_cursor(0, { 2, 2 })
+  eq(links.follow(), false)
+end)
+
+test("backlinks: resolved links only, code ignored, ambiguous counts", function()
+  local function names(path)
+    return vim.tbl_map(function(p)
+      return p:sub(#tmp5 + 2)
+    end, links.backlinks(path))
+  end
+  eq(names(tmp5 .. "/index.md"), { "other.md", "personal/meeting.md" })
+  eq(names(tmp5 .. "/work/meeting.md"), { "index.md" })
+  eq(names(tmp5 .. "/personal/meeting.md"), { "index.md" })
+  eq(names(tmp5 .. "/other.md"), {})
+end)
+
+test("NotesBacklinks: picker for the current note", function()
+  vim.cmd.edit(vim.fn.fnameescape(tmp5 .. "/index.md"))
+  local shown, prompt = capture_select(function()
+    require("notes").backlinks()
+  end)
+  eq(prompt, "Backlinks: index")
+  table.sort(shown)
+  eq(shown, { "other", "personal/meeting" })
+end)
+
+test("attach: follow keys only in buffers inside the notes dir", function()
+  require("notes").setup({ dir = tmp5, start_insert = false, picker = "select" })
+  vim.cmd.edit(vim.fn.fnameescape(tmp5 .. "/other.md"))
+  links.attach(0)
+  eq(vim.fn.maparg("<CR>", "n", false, true).buffer, 1)
+  eq(vim.fn.maparg("gf", "n", false, true).buffer, 1)
+  local outside = vim.fn.tempname() .. ".md"
+  vim.cmd.edit(vim.fn.fnameescape(outside))
+  links.attach(0)
+  eq(vim.fn.maparg("<CR>", "n", false, true), {})
+end)
+
+vim.fn.delete(tmp5, "rf")
+
 io.stdout:write(("\n%d passed, %d failed\n"):format(passed, failed))
 os.exit(failed > 0 and 1 or 0)

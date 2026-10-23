@@ -19,6 +19,27 @@ function M.setup(opts)
   map(keymaps.tags, function()
     M.tags()
   end, "notes by tag")
+  map(keymaps.backlinks, M.backlinks, "backlinks")
+
+  -- Follow-link keys on notes, including ones already open.
+  local links = require("notes.links")
+  vim.api.nvim_create_autocmd("FileType", {
+    group = vim.api.nvim_create_augroup("notes_links", { clear = true }),
+    pattern = "markdown",
+    callback = function(args)
+      links.attach(args.buf)
+    end,
+  })
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_loaded(buf) and vim.bo[buf].filetype == "markdown" then
+      links.attach(buf)
+    end
+  end
+end
+
+--- Follow the [[link]] under the cursor. Returns false when the cursor is not on a link.
+function M.follow_link()
+  return require("notes.links").follow()
 end
 
 --- Create a new note. `opts` is a name string or `{ template?, name?, fields? }`;
@@ -153,6 +174,24 @@ function M.tags(query)
       pick_notes("#" .. item.tag.name, item.tag.paths)
     end)
   end)
+end
+
+--- Pick from the notes that link to the current note (or `path`).
+function M.backlinks(path)
+  local fs = require("notes.fs")
+  path = path or vim.api.nvim_buf_get_name(0)
+  if path == "" or not fs.is_inside(path, require("notes.config").dir()) then
+    vim.notify("notes: not a note", vim.log.levels.INFO)
+    return
+  end
+  path = fs.normalize(path)
+  local name = vim.fn.fnamemodify(path, ":t:r")
+  local paths = require("notes.links").backlinks(path)
+  if #paths == 0 then
+    vim.notify("notes: no backlinks to " .. name, vim.log.levels.INFO)
+    return
+  end
+  pick_notes("Backlinks: " .. name, paths)
 end
 
 --- Search the contents of all notes (requires ripgrep).
