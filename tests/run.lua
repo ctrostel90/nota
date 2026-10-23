@@ -260,6 +260,27 @@ test("pickers: unavailable backend falls back to select with one warning", funct
   eq(warnings, 1)
 end)
 
+test("grep (select backend): rg results land in quickfix", function()
+  if vim.fn.executable("rg") == 0 then
+    io.stdout:write("SKIP grep: rg not installed\n")
+    return
+  end
+  fs.write_file(tmp2 .. "/work/new.md", "first\nthe Needle line\n")
+  fs.write_file(tmp2 .. "/readme.txt", "needle in a txt\n")
+  local original = vim.ui.input
+  vim.ui.input = function(_, on_confirm)
+    on_confirm("needle")
+  end
+  config.setup({ dir = tmp2, picker = "select" })
+  require("notes").grep()
+  vim.ui.input = original
+  local items = vim.fn.getqflist()
+  eq(#items, 1)
+  eq(vim.fs.normalize(vim.api.nvim_buf_get_name(items[1].bufnr)), tmp2 .. "/work/new.md")
+  eq({ items[1].lnum, items[1].col }, { 2, 5 })
+  vim.cmd.cclose()
+end)
+
 test("config: rejects unknown picker", function()
   local ok, err = pcall(config.setup, { picker = "bogus" })
   eq(ok, false)

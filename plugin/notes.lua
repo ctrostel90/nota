@@ -36,3 +36,7 @@ end, { desc = "Open or create today's daily note" })
 vim.api.nvim_create_user_command("NotesFind", function()
   require("notes").find()
 end, { desc = "Find a note by name" })
+
+vim.api.nvim_create_user_command("NotesGrep", function()
+  require("notes").grep()
+end, { desc = "Search the contents of all notes" })

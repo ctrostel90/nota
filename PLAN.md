@@ -112,7 +112,7 @@ tests/
 2. [x] Picker adapter + `vim.ui.select` backend, `NotesFind`, `NotesToday`
 3. [x] Named templates: template specs (`dir`, `name` pattern, `fields`), `template_dir`,
        `{{date:fmt}}`, `:NotesNewFrom`, `new({ template = ... })`, `daily` folded into templates
-4. [ ] Telescope / fzf-lua / snacks backends, `NotesGrep`
+4. [x] Telescope / fzf-lua / snacks backends, `NotesGrep`
 5. [ ] Tag parser + index, `NotesTags`
 6. [ ] Wiki links: follow, create-on-missing, backlinks
 7. [ ] Completion: core → omnifunc → blink → cmp

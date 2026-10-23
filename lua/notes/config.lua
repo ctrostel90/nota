@@ -28,6 +28,7 @@ M.defaults = {
     new = "<leader>nn",
     today = "<leader>nd",
     find = "<leader>nf",
+    grep = "<leader>ng",
   },
 }
 

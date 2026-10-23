@@ -4,9 +4,9 @@ local M = {}
 
 -- Backends in auto-detect order. Each is a module `notes.pickers.<name>` exposing:
 --   available() -> boolean
---   pick(items, opts, on_choice)  -- items: { path, name }[], opts: { prompt }, on_choice(item)
--- TODO(milestone 3): add telescope, fzf_lua, snacks ahead of select.
-M.order = { "select" }
+--   pick(items, opts, on_choice)  -- items: { name, path? }[], opts: { prompt }, on_choice(item)
+--   grep(opts)                    -- opts: { cwd, prompt }; searches *.md below cwd
+M.order = { "telescope", "fzf_lua", "snacks", "select" }
 
 local aliases = { ["fzf-lua"] = "fzf_lua" }
 local warned = {}
@@ -38,8 +38,22 @@ function M.backend()
   end
 end
 
+--- Previews are only shown when every item is a file.
+function M.all_have_paths(items)
+  for _, item in ipairs(items) do
+    if not item.path then
+      return false
+    end
+  end
+  return #items > 0
+end
+
 function M.pick(items, opts, on_choice)
   M.backend().pick(items, opts, on_choice)
+end
+
+function M.grep(opts)
+  M.backend().grep(opts)
 end
 
 return M
