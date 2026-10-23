@@ -776,5 +776,102 @@ end)
 
 vim.fn.delete(tmp5, "rf")
 
+-- completion ------------------------------------------------------------
+
+local core = require("notes.completion.core")
+local tmp6 = vim.fs.normalize(vim.fn.tempname())
+vim.fn.mkdir(tmp6 .. "/work", "p")
+vim.fn.mkdir(tmp6 .. "/personal", "p")
+fs.write_file(tmp6 .. "/work/meeting.md", "# Sprint Review\n#work #meeting\n")
+fs.write_file(tmp6 .. "/personal/meeting.md", "#meeting\n")
+fs.write_file(tmp6 .. "/ideas.md", "no heading, #idea")
+vim.uv.fs_utime(tmp6 .. "/work/meeting.md", 3000, 3000)
+vim.uv.fs_utime(tmp6 .. "/personal/meeting.md", 2000, 2000)
+vim.uv.fs_utime(tmp6 .. "/ideas.md", 1000, 1000)
+config.setup({ dir = tmp6, start_insert = false, picker = "select" })
+
+local function ctx_at(line)
+  -- `@` marks the cursor.
+  local col = line:find("@", 1, true) - 1
+  line = line:gsub("@", "", 1)
+  return core.context(0, 1, col, line)
+end
+
+test("completion.context: tags", function()
+  vim.cmd.enew()
+  eq(ctx_at("#wo@"), { kind = "tag", start = 1, prefix = "wo" })
+  eq(ctx_at("text #work/pl@ more"), { kind = "tag", start = 6, prefix = "work/pl" })
+  eq(ctx_at("x #@"), { kind = "tag", start = 3, prefix = "" })
+  eq(ctx_at("C#@"), nil)
+  eq(ctx_at("page#an@"), nil)
+  eq(ctx_at("`#co@"), nil)
+  eq(ctx_at("`a` #ok@"), { kind = "tag", start = 5, prefix = "ok" })
+end)
+
+test("completion.context: links", function()
+  eq(ctx_at("see [[Meet No@"), { kind = "link", start = 6, prefix = "Meet No", closed = false })
+  eq(ctx_at("[[@]]"), { kind = "link", start = 2, prefix = "", closed = true })
+  eq(ctx_at("[[a|b@"), nil)
+  eq(ctx_at("[[a#He@"), nil)
+  eq(ctx_at("[[done]] @"), nil)
+end)
+
+test("completion.context: nothing inside fenced code", function()
+  vim.cmd.enew()
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { "```", "#ta", "```", "#ta" })
+  eq(core.context(0, 2, 3, "#ta"), nil)
+  eq(core.context(0, 4, 3, "#ta"), { kind = "tag", start = 1, prefix = "ta" })
+end)
+
+test("completion.items: tags by use, with counts", function()
+  local items = core.items({ kind = "tag" })
+  eq(vim.tbl_map(function(i)
+    return { i.label, i.insert, i.detail }
+  end, items), { { "#meeting", "meeting", "2 notes" }, { "#idea", "idea", "1 note" }, { "#work", "work", "1 note" } })
+end)
+
+test("completion.items: links insert the shortest unique target", function()
+  local items = core.items({ kind = "link", closed = false })
+  eq(vim.tbl_map(function(i)
+    return { i.label, i.insert, i.detail }
+  end, items), {
+    { "work/meeting", "work/meeting]]", "Sprint Review" },
+    { "personal/meeting", "personal/meeting]]", nil },
+    { "ideas", "ideas]]", nil },
+  })
+  eq(items[1].filter, "work/meeting Sprint Review")
+  eq(core.items({ kind = "link", closed = true })[3].insert, "ideas")
+end)
+
+test("completion.documentation: first lines", function()
+  eq(core.documentation(tmp6 .. "/work/meeting.md"), "# Sprint Review\n#work #meeting")
+  eq(core.documentation(tmp6 .. "/work/meeting.md", 1), "# Sprint Review")
+end)
+
+test("completion.enabled: notes only", function()
+  vim.cmd.edit(vim.fn.fnameescape(tmp6 .. "/ideas.md"))
+  eq(core.enabled(0), true)
+  vim.cmd.edit(vim.fn.fnameescape(vim.fn.tempname() .. ".md"))
+  eq(core.enabled(0), false)
+end)
+
+test("omnifunc: start column, fuzzy filtering, set on notes", function()
+  local omni = require("notes.completion.omni")
+  vim.cmd.edit(vim.fn.fnameescape(tmp6 .. "/ideas.md"))
+  omni.attach(0)
+  eq(vim.bo.omnifunc, "v:lua.require'notes.completion.omni'.complete")
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { "see [[spr" })
+  vim.api.nvim_win_set_cursor(0, { 1, 9 })
+  eq(omni.complete(1, ""), 6)
+  eq(vim.tbl_map(function(i)
+    return i.word
+  end, omni.complete(0, "spr")), { "work/meeting]]" })
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { "plain" })
+  vim.api.nvim_win_set_cursor(0, { 1, 5 })
+  eq(omni.complete(1, ""), -3)
+end)
+
+vim.fn.delete(tmp6, "rf")
+
 io.stdout:write(("\n%d passed, %d failed\n"):format(passed, failed))
 os.exit(failed > 0 and 1 or 0)

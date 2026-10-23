@@ -26,6 +26,13 @@ Neovim 0.11+, pure Lua, Windows + Linux. Only external dependency: ripgrep (for 
   - Missing targets are created with the default template as unsaved buffers (`links.confirm_create`).
   - `:NotesBacklinks` / `<leader>nb`: notes whose links resolve to the current note (ambiguous links count).
 - **Completion**: shared core feeding blink.cmp, nvim-cmp, and omnifunc. `#` → tags, `[[` → note names.
+  - Only in notes; not inside fenced or inline code.
+  - Tags ranked by use, with note counts. Links insert the shortest unique target plus `]]`
+    (unless already closed), match on path and first `# Title`, and preview the note (blink/cmp).
+  - Engines filter on the last word only, so multi-word link prefixes (`[[Sprint Re`) are
+    pre-filtered by the source (every word, any order).
+  - blink: add provider `module = "notes.completion.blink"`; cmp: `setup()` registers source
+    `notes`; omnifunc set on notes (`completion.omnifunc`).
 - **Index**: built lazily via `vim.fs.dir`; on each use, re-parses only files whose mtime/size changed
   (so external edits are seen too).
 - **New notes**: opened as unsaved buffers; nothing is written (and no folder created) until the user saves.
@@ -133,5 +140,5 @@ tests/
 4. [x] Telescope / fzf-lua / snacks backends, `NotesGrep`
 5. [x] Tag parser + index, `NotesTags`
 6. [x] Wiki links: follow, create-on-missing, backlinks
-7. [ ] Completion: core → omnifunc → blink → cmp
+7. [x] Completion: core → omnifunc → blink → cmp
 8. [ ] Docs, tests, CI matrix (ubuntu + windows)
