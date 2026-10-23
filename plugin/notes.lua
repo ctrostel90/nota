@@ -18,6 +18,17 @@ end, {
   end,
 })
 
+vim.api.nvim_create_user_command("NotesNewFrom", function(cmd)
+  local template, name = cmd.args:match("^(%S+)%s*(.*)$")
+  require("notes").new_from(template, name ~= "" and name or nil)
+end, {
+  nargs = "*",
+  desc = "Create a new note from a template ({template} [folder/name]; picks when omitted)",
+  complete = function(arglead, cmdline)
+    return require("notes.note").complete_from(arglead, cmdline)
+  end,
+})
+
 vim.api.nvim_create_user_command("NotesToday", function()
   require("notes").today()
 end, { desc = "Open or create today's daily note" })

@@ -110,7 +110,7 @@ tests/
 
 1. [x] `fs`, `config`, `NotesNew` (subfolders, auto timestamp, templates)
 2. [x] Picker adapter + `vim.ui.select` backend, `NotesFind`, `NotesToday`
-3. [ ] Named templates: template specs (`dir`, `name` pattern, `fields`), `template_dir`,
+3. [x] Named templates: template specs (`dir`, `name` pattern, `fields`), `template_dir`,
        `{{date:fmt}}`, `:NotesNewFrom`, `new({ template = ... })`, `daily` folded into templates
 4. [ ] Telescope / fzf-lua / snacks backends, `NotesGrep`
 5. [ ] Tag parser + index, `NotesTags`

@@ -1,5 +1,6 @@
 local config = require("notes.config")
 local fs = require("notes.fs")
+local templates = require("notes.templates")
 
 local M = {}
 
@@ -24,10 +25,12 @@ function M.slugify(text)
 end
 
 --- Split user input like `work/Meeting Notes` into folders, a filename stem and a title.
---- A trailing separator (`work/`) or empty input leaves `stem` nil so a timestamp is used.
+--- A trailing separator (`work/`) or empty input leaves `stem` nil. `has_folder` is true when
+--- the input contained a separator, so `/x` explicitly means the notes root.
 function M.parse_name(input)
   input = vim.trim(input or ""):gsub("%.md$", "")
   local folder, name = input:match("^(.*)[/\\](.-)$")
+  local has_folder = folder ~= nil
   if not folder then
     folder, name = "", input
   end
@@ -44,9 +47,43 @@ function M.parse_name(input)
   local stem = M.slugify(title)
   return {
     dirs = dirs,
+    has_folder = has_folder,
     stem = stem ~= "" and stem or nil,
     title = title ~= "" and title or nil,
   }
+end
+
+--- Replace `{{key}}`, `{{date:<fmt>}}` and `{{time:<fmt>}}` placeholders from `ctx`.
+--- `transform` is applied to substituted values. Unknown keys and `{{cursor}}` become
+--- `missing`, or are left in place when `missing` is nil.
+local function expand(text, ctx, transform, missing)
+  return (text:gsub("{{([%w_]+)(:?)([^{}]*)}}", function(key, colon, fmt)
+    local value
+    if colon == ":" and (key == "date" or key == "time") then
+      value = os.date(fmt)
+    elseif colon == "" and fmt == "" and key ~= "cursor" then
+      value = ctx[key]
+    end
+    if value == nil then
+      return missing
+    end
+    value = tostring(value)
+    return transform and transform(value) or value
+  end))
+end
+
+--- Build a note's path relative to its folder (without .md) from a filename pattern.
+--- Values are slugified; separators left dangling by empty values and empty segments
+--- (including `..`) are dropped. Returns "" when nothing is left.
+function M.render_name(pattern, ctx)
+  local segments = {}
+  for segment in expand(pattern, ctx, M.slugify, ""):gmatch("[^/\\]+") do
+    segment = segment:gsub("([-_. ])[-_. ]+", "%1"):gsub("^[-_. ]+", ""):gsub("[-_. ]+$", "")
+    if segment ~= "" then
+      segments[#segments + 1] = segment
+    end
+  end
+  return table.concat(segments, "/")
 end
 
 --- Render a template into lines. Returns `lines, cursor` where cursor is a {row, col}
@@ -63,14 +100,7 @@ function M.render(template, ctx)
   end
   template = template:gsub("\r\n", "\n")
 
-  -- Unknown placeholders and {{cursor}} are left in place.
-  local text = template:gsub("{{(%w+)}}", function(key)
-    if key ~= "cursor" and ctx[key] ~= nil then
-      return tostring(ctx[key])
-    end
-  end)
-
-  local lines = vim.split(text, "\n", { plain = true })
+  local lines = vim.split(expand(template, ctx), "\n", { plain = true })
   local cursor
   for i, line in ipairs(lines) do
     local col = line:find("{{cursor}}", 1, true)
@@ -146,50 +176,50 @@ function M.open(path, cursor, lines)
   end
 end
 
---- Open `path` if it already exists (on disk or as an open buffer); otherwise open it
---- as an unsaved buffer filled from `template`. Returns `path, created`.
-local function open_or_create(path, template, title)
-  local opts = config.options
+--- Create a note from user input (see `parse_name`) and open it as an unsaved buffer.
+--- `opts`: `template` (name, default "default"), `fields` (values for the template's
+--- fields), `quiet` (no message when an existing note is opened).
+--- The template's `name` pattern picks the filename; if it comes out empty a unique
+--- timestamp is used. If the note already exists it is opened unchanged.
+--- Returns `path, created`, or `nil, false` for an unknown template.
+function M.create(input, opts)
+  opts = opts or {}
+  local spec, err = templates.get(opts.template or "default")
+  if not spec then
+    vim.notify("notes: " .. err, vim.log.levels.ERROR)
+    return nil, false
+  end
+
+  local o = config.options
+  local parsed = M.parse_name(input)
+  local ctx = vim.tbl_extend("force", opts.fields or {}, {
+    title = parsed.title or os.date(o.date_format .. " " .. o.time_format),
+    slug = parsed.stem or "",
+    date = os.date(o.date_format),
+    time = os.date(o.time_format),
+  })
+
+  -- A folder typed in the name replaces the template's folder.
+  local dirs = parsed.has_folder and parsed.dirs or vim.split(spec.dir, "[/\\]", { trimempty = true })
+  local dir = fs.join(config.dir(), unpack(dirs))
+  local rel = M.render_name(spec.pattern, ctx)
+  local path = rel ~= "" and fs.join(dir, rel .. ".md") or unique_path(dir, os.date(o.timestamp_format))
+
   if taken(path) then
     M.open(path)
+    if not opts.quiet then
+      vim.notify("notes: opened existing note " .. path, vim.log.levels.INFO)
+    end
     return path, false
   end
-  local lines, cursor = M.render(template, {
-    title = title,
-    date = os.date(opts.date_format),
-    time = os.date(opts.time_format),
-  })
+  local lines, cursor = M.render(spec.template, ctx)
   M.open(path, cursor, lines)
   return path, true
 end
 
---- Create a note from user input (see `parse_name`) and open it as an unsaved buffer.
---- If the note already exists it is opened unchanged. Returns `path, created`.
-function M.create(input)
-  local opts = config.options
-  local parsed = M.parse_name(input)
-  local dir = fs.join(config.dir(), unpack(parsed.dirs))
-
-  local path, title
-  if parsed.stem then
-    path, title = fs.join(dir, parsed.stem .. ".md"), parsed.title
-  else
-    path = unique_path(dir, os.date(opts.timestamp_format))
-    title = os.date(opts.date_format .. " " .. opts.time_format)
-  end
-
-  local _, created = open_or_create(path, opts.templates.default, title)
-  if not created then
-    vim.notify("notes: opened existing note " .. path, vim.log.levels.INFO)
-  end
-  return path, created
-end
-
---- Open today's daily note, creating it from the daily template if needed.
+--- Open today's daily note, creating it from the `daily` template if needed.
 function M.today()
-  local opts = config.options
-  local path = fs.join(config.dir(), opts.daily_dir, os.date(opts.daily_format) .. ".md")
-  return open_or_create(path, opts.templates.daily, os.date(opts.date_format))
+  return M.new({ template = "daily", name = "", quiet = true })
 end
 
 --- All notes as `{ path = absolute, name = relative without .md }`, most recently modified first.
@@ -209,16 +239,76 @@ function M.list()
   return notes
 end
 
---- Create a note named `name`, or prompt for one when `name` is nil.
-function M.new(name)
-  if name then
-    return M.create(name)
+--- Ask each prompt in turn; cancelling any of them aborts without calling `done`.
+--- Scheduled between prompts so floating input UIs can close before the next opens.
+local function ask(prompts, done, i)
+  i = i or 1
+  if i > #prompts then
+    return done()
   end
-  vim.ui.input({ prompt = "New note (folder/name, empty = timestamp): " }, function(input)
-    if input then
-      M.create(input)
+  vim.ui.input({ prompt = prompts[i].prompt }, function(input)
+    if input == nil then
+      return
     end
+    prompts[i].answer(input)
+    vim.schedule(function()
+      ask(prompts, done, i + 1)
+    end)
   end)
+end
+
+--- Create a note, prompting for whatever is missing.
+--- `opts` is a name string or `{ template?, name?, fields?, quiet? }`. A nil `name` and any
+--- template fields not in `fields` are prompted for. Without prompts, returns `create`'s result.
+function M.new(opts)
+  if type(opts) ~= "table" then
+    opts = { name = opts }
+  end
+  local spec, err = templates.get(opts.template or "default")
+  if not spec then
+    vim.notify("notes: " .. err, vim.log.levels.ERROR)
+    return nil, false
+  end
+
+  local name, fields = opts.name, vim.deepcopy(opts.fields or {})
+  local prompts = {}
+  if name == nil then
+    local label = spec.name == "default" and "New note" or ("New %s note"):format(spec.name)
+    prompts[#prompts + 1] = {
+      prompt = label .. " (folder/name, empty = auto): ",
+      answer = function(input)
+        name = input
+      end,
+    }
+  end
+  for _, field in ipairs(spec.fields) do
+    if fields[field.name] == nil then
+      prompts[#prompts + 1] = {
+        prompt = field.prompt,
+        answer = function(input)
+          fields[field.name] = input
+        end,
+      }
+    end
+  end
+
+  local function create()
+    return M.create(name, { template = spec.name, fields = fields, quiet = opts.quiet })
+  end
+  if #prompts == 0 then
+    return create()
+  end
+  ask(prompts, create)
+end
+
+--- Command-line completion for :NotesNewFrom: template names first, then folders.
+function M.complete_from(arglead, cmdline)
+  if cmdline:match("^%s*%S+%s+%S*$") then
+    return vim.tbl_filter(function(name)
+      return vim.startswith(name, arglead)
+    end, templates.names())
+  end
+  return M.complete(arglead)
 end
 
 --- Command-line completion: existing folders inside the notes dir.
