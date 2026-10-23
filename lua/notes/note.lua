@@ -146,9 +146,25 @@ function M.open(path, cursor, lines)
   end
 end
 
+--- Open `path` if it already exists (on disk or as an open buffer); otherwise open it
+--- as an unsaved buffer filled from `template`. Returns `path, created`.
+local function open_or_create(path, template, title)
+  local opts = config.options
+  if taken(path) then
+    M.open(path)
+    return path, false
+  end
+  local lines, cursor = M.render(template, {
+    title = title,
+    date = os.date(opts.date_format),
+    time = os.date(opts.time_format),
+  })
+  M.open(path, cursor, lines)
+  return path, true
+end
+
 --- Create a note from user input (see `parse_name`) and open it as an unsaved buffer.
---- If the note already exists (on disk or as an open buffer) it is opened unchanged.
---- Returns `path, created`.
+--- If the note already exists it is opened unchanged. Returns `path, created`.
 function M.create(input)
   local opts = config.options
   local parsed = M.parse_name(input)
@@ -162,19 +178,35 @@ function M.create(input)
     title = os.date(opts.date_format .. " " .. opts.time_format)
   end
 
-  if taken(path) then
-    M.open(path)
+  local _, created = open_or_create(path, opts.templates.default, title)
+  if not created then
     vim.notify("notes: opened existing note " .. path, vim.log.levels.INFO)
-    return path, false
   end
+  return path, created
+end
 
-  local lines, cursor = M.render(opts.templates.default, {
-    title = title,
-    date = os.date(opts.date_format),
-    time = os.date(opts.time_format),
-  })
-  M.open(path, cursor, lines)
-  return path, true
+--- Open today's daily note, creating it from the daily template if needed.
+function M.today()
+  local opts = config.options
+  local path = fs.join(config.dir(), opts.daily_dir, os.date(opts.daily_format) .. ".md")
+  return open_or_create(path, opts.templates.daily, os.date(opts.date_format))
+end
+
+--- All notes as `{ path = absolute, name = relative without .md }`, most recently modified first.
+function M.list()
+  local root = config.dir()
+  local notes = {}
+  for _, rel in ipairs(fs.list_files(root, ".md")) do
+    local path = fs.join(root, rel)
+    notes[#notes + 1] = { path = path, name = rel:sub(1, -4), mtime = fs.mtime(path) }
+  end
+  table.sort(notes, function(a, b)
+    if a.mtime ~= b.mtime then
+      return a.mtime > b.mtime
+    end
+    return a.name < b.name
+  end)
+  return notes
 end
 
 --- Create a note named `name`, or prompt for one when `name` is nil.
