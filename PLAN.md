@@ -141,4 +141,4 @@ tests/
 5. [x] Tag parser + index, `NotesTags`
 6. [x] Wiki links: follow, create-on-missing, backlinks
 7. [x] Completion: core → omnifunc → blink → cmp
-8. [ ] Docs, tests, CI matrix (ubuntu + windows)
+8. [x] Docs, tests, CI matrix (ubuntu + windows): README, :help notes, tests/all.lua runner, GitHub Actions

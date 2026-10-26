@@ -1,0 +1,40 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / nvim ${{ matrix.nvim }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        nvim: [v0.11.5, stable]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: ${{ matrix.nvim }}
+
+      - name: Install ripgrep and fzf (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ripgrep fzf
+
+      - name: Install ripgrep and fzf (Windows)
+        if: runner.os == 'Windows'
+        run: choco install -y --no-progress ripgrep fzf
+
+      - name: Cache test plugins
+        uses: actions/cache@v4
+        with:
+          path: .tests/plugins
+          key: test-plugins-${{ runner.os }}-${{ hashFiles('tests/all.lua') }}
+
+      - name: Run tests
+        run: nvim -l tests/all.lua
