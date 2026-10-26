@@ -187,3 +187,7 @@ nvim -l tests/all.lua pickers    # only matching suites
 Suites: unit tests, picker backends (telescope, fzf-lua, snacks), and completion engines
 (blink.cmp, nvim-cmp, omnifunc) driven with real keystrokes in a child Neovim. CI runs them
 on Ubuntu and Windows against Neovim 0.11.5 and stable.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
